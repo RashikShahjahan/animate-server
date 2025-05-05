@@ -3,18 +3,41 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
 // corsMiddleware adds CORS headers to responses
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		// Get allowed origins from environment variable
+		allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+		origin := r.Header.Get("Origin")
 
+		// Check if the request origin is in the allowed origins list
+		originAllowed := false
+		for _, allowed := range strings.Split(allowedOrigins, ",") {
+			allowed = strings.TrimSpace(allowed)
+			if allowed == origin || allowed == "*" {
+				originAllowed = true
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				break
+			}
+		}
+
+		// If origin not explicitly allowed but we have a wildcard, set header
+		if !originAllowed && strings.Contains(allowedOrigins, "*") {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+
+		// Handle preflight OPTIONS request
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent) // Use 204 No Content for preflight responses
 			return
 		}
 

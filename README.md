@@ -31,6 +31,19 @@ A server for generating and storing p5.js animations using Claude API.
 5. Edit the `.env` file with your specific configuration:
    - Set your Claude API key
    - Set your PostgreSQL database credentials
+   - Set ALLOWED_ORIGINS to control CORS (comma-separated list of domains, e.g., "https://frontend1.example.com,https://frontend2.example.com" or use "*" for development)
+
+## Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| CLAUDE_API_KEY | Your Claude API key | sk_123456789 |
+| DB_HOST | PostgreSQL database host | localhost |
+| DB_PORT | PostgreSQL database port | 5432 |
+| DB_USER | PostgreSQL database user | postgres |
+| DB_PASSWORD | PostgreSQL database password | password |
+| DB_NAME | PostgreSQL database name | animations |
+| ALLOWED_ORIGINS | Comma-separated list of allowed origins for CORS | https://animate-frontend-production.up.railway.app,http://localhost:3000 |
 
 ## Running the server
 
