@@ -54,8 +54,8 @@ func generateAnimationWithClaude(description string, apiKey string) (string, err
 				Content: prompt,
 			},
 		},
-		MaxTokens:   4000,
-		Temperature: 0.7,
+		MaxTokens:   8192,
+		Temperature: 1.0,
 	}
 
 	// Convert request to JSON
