@@ -12,7 +12,8 @@ type AnimationResponse struct {
 }
 
 type SaveAnimationRequest struct {
-	Code string `json:"code"`
+	Code        string `json:"code"`
+	Description string `json:"description"`
 }
 
 type SaveAnimationResponse struct {
@@ -24,7 +25,8 @@ type GetAnimationRequest struct {
 }
 
 type GetAnimationResponse struct {
-	Code string `json:"code"`
+	Code        string `json:"code"`
+	Description string `json:"description"`
 }
 
 type FixAnimationRequest struct {

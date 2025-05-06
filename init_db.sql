@@ -16,4 +16,17 @@ CREATE TABLE IF NOT EXISTS animations (
 CREATE INDEX IF NOT EXISTS idx_animations_id ON animations(id);
 
 -- Add comment on table
-COMMENT ON TABLE animations IS 'Stores p5.js animation codes with unique IDs'; 
+COMMENT ON TABLE animations IS 'Stores p5.js animation codes with unique IDs';
+
+-- Add description column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'animations'
+        AND column_name = 'description'
+    ) THEN
+        ALTER TABLE animations ADD COLUMN description TEXT;
+    END IF;
+END $$; 

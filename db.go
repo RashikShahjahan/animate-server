@@ -88,6 +88,7 @@ func initDB() error {
 		CREATE TABLE IF NOT EXISTS animations (
 			id VARCHAR(32) PRIMARY KEY,
 			code TEXT NOT NULL,
+			description TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
@@ -143,7 +144,7 @@ func executeInitScript() error {
 }
 
 // saveAnimation stores an animation code in the database and returns its ID
-func saveAnimation(code string) (string, error) {
+func saveAnimation(code string, description string) (string, error) {
 	if code == "" {
 		log.Printf("[DB ERROR] Cannot save empty animation code")
 		return "", errors.New("animation code cannot be empty")
@@ -161,7 +162,7 @@ func saveAnimation(code string) (string, error) {
 	log.Printf("[DB] Saving animation with ID: %s", id)
 
 	// Store the animation in the database
-	_, err = db.Exec("INSERT INTO animations (id, code) VALUES ($1, $2)", id, code)
+	_, err = db.Exec("INSERT INTO animations (id, code, description) VALUES ($1, $2, $3)", id, code, description)
 	if err != nil {
 		log.Printf("[DB ERROR] Failed to save animation to database: %v", err)
 		return "", err
@@ -172,26 +173,27 @@ func saveAnimation(code string) (string, error) {
 }
 
 // getAnimation retrieves an animation by ID from the database
-func getAnimation(id string) (string, error) {
+func getAnimation(id string) (string, string, error) {
 	if id == "" {
 		log.Printf("[DB ERROR] Cannot retrieve animation with empty ID")
-		return "", errors.New("animation ID cannot be empty")
+		return "", "", errors.New("animation ID cannot be empty")
 	}
 
 	log.Printf("[DB] Retrieving animation with ID: %s", id)
 
 	// Retrieve the animation from the database
 	var code string
-	err := db.QueryRow("SELECT code FROM animations WHERE id = $1", id).Scan(&code)
+	var description string
+	err := db.QueryRow("SELECT code, description FROM animations WHERE id = $1", id).Scan(&code, &description)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[DB ERROR] Animation not found with ID: %s", id)
-			return "", errors.New("animation not found")
+			return "", "", errors.New("animation not found")
 		}
 		log.Printf("[DB ERROR] Failed to retrieve animation from database: %v", err)
-		return "", err
+		return "", "", err
 	}
 
 	log.Printf("[DB] Animation retrieved successfully with ID: %s", id)
-	return code, nil
+	return code, description, nil
 }

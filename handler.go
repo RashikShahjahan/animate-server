@@ -86,7 +86,7 @@ func saveAnimationHandler(w http.ResponseWriter, r *http.Request) {
 	logRequest("/save-animation", "Received animation code to save")
 
 	// Save the animation to the database
-	id, err := saveAnimation(req.Code)
+	id, err := saveAnimation(req.Code, req.Description)
 	if err != nil {
 		logResponse("/save-animation", "Error saving animation", err)
 		encodeError(w, "Error saving animation: "+err.Error(), http.StatusInternalServerError)
@@ -110,7 +110,7 @@ func getAnimationHandler(w http.ResponseWriter, r *http.Request) {
 	logRequest("/animation/{id}", "Retrieving animation ID: "+id)
 
 	// Retrieve the animation from the database
-	code, err := getAnimation(id)
+	code, description, err := getAnimation(id)
 	if err != nil {
 		logResponse("/animation/{id}", "Error retrieving animation ID: "+id, err)
 		encodeError(w, "Error retrieving animation: "+err.Error(), http.StatusNotFound)
@@ -120,7 +120,7 @@ func getAnimationHandler(w http.ResponseWriter, r *http.Request) {
 	logResponse("/animation/{id}", "Animation retrieved successfully", nil)
 
 	// Return the animation code
-	response := AnimationResponse{Code: code}
+	response := GetAnimationResponse{Code: code, Description: description}
 	json.NewEncoder(w).Encode(response)
 }
 
