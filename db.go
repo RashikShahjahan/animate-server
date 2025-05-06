@@ -183,7 +183,7 @@ func getAnimation(id string) (string, string, error) {
 
 	// Retrieve the animation from the database
 	var code string
-	var description string
+	var description sql.NullString
 	err := db.QueryRow("SELECT code, description FROM animations WHERE id = $1", id).Scan(&code, &description)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -194,6 +194,12 @@ func getAnimation(id string) (string, string, error) {
 		return "", "", err
 	}
 
+	// Handle NULL description
+	descriptionValue := ""
+	if description.Valid {
+		descriptionValue = description.String
+	}
+
 	log.Printf("[DB] Animation retrieved successfully with ID: %s", id)
-	return code, description, nil
+	return code, descriptionValue, nil
 }
