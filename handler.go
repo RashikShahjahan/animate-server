@@ -2,28 +2,172 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // setupRouter configures and returns the application router
 func setupRouter() *mux.Router {
 	r := mux.NewRouter()
 
-	// Add middlewares
+	// Add global middlewares
 	r.Use(corsMiddleware)
 	r.Use(loggingMiddleware)
 
-	// Set up routes
-	r.HandleFunc("/generate-animation", animationHandler).Methods(http.MethodPost, http.MethodOptions)
-	r.HandleFunc("/save-animation", saveAnimationHandler).Methods(http.MethodPost, http.MethodOptions)
-	r.HandleFunc("/fix-animation", fixAnimationHandler).Methods(http.MethodPost, http.MethodOptions)
-
-	// You could also add a route to retrieve an animation by ID
+	// Public routes
+	r.HandleFunc("/register", registerHandler).Methods(http.MethodPost, http.MethodOptions)
+	r.HandleFunc("/login", loginHandler).Methods(http.MethodPost, http.MethodOptions)
 	r.HandleFunc("/animation/{id}", getAnimationHandler).Methods(http.MethodGet)
 
+	// Create a subrouter for protected routes
+	protected := r.PathPrefix("").Subrouter()
+	protected.Use(authMiddleware)
+
+	// Protected routes
+	protected.HandleFunc("/generate-animation", animationHandler).Methods(http.MethodPost, http.MethodOptions)
+	protected.HandleFunc("/save-animation", saveAnimationHandler).Methods(http.MethodPost, http.MethodOptions)
+	protected.HandleFunc("/fix-animation", fixAnimationHandler).Methods(http.MethodPost, http.MethodOptions)
+
 	return r
+}
+
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse the request body
+	var req RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logResponse("/register", "Invalid request format", err)
+		encodeError(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if req.Email == "" || req.Password == "" {
+		logResponse("/register", "Email and password are required", nil)
+		encodeError(w, "Email and password are required", http.StatusBadRequest)
+		return
+	}
+
+	// Check if user already exists
+	if userExists(req.Email) {
+		logResponse("/register", "User already exists", nil)
+		encodeError(w, "User already exists", http.StatusConflict)
+		return
+	}
+
+	// Hash the password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		logResponse("/register", "Error hashing password", err)
+		encodeError(w, "Error hashing password", http.StatusInternalServerError)
+		return
+	}
+
+	// Create the user in the database
+	userId, err := createUser(req.Email, string(hashedPassword))
+	if err != nil {
+		logResponse("/register", "Error creating user", err)
+		encodeError(w, "Error creating user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Generate JWT token
+	token, err := generateJWT(userId)
+	if err != nil {
+		logResponse("/register", "Error generating token", err)
+		encodeError(w, "Error generating token", http.StatusInternalServerError)
+		return
+	}
+
+	logResponse("/register", "User registered successfully", nil)
+
+	// Return the JWT token
+	response := LoginResponse{
+		Token: token,
+		Email: req.Email,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse the request body
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logResponse("/login", "Invalid request format", err)
+		encodeError(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if req.Email == "" || req.Password == "" {
+		logResponse("/login", "Email and password are required", nil)
+		encodeError(w, "Email and password are required", http.StatusBadRequest)
+		return
+	}
+
+	// Get user from database
+	userId, storedHash, err := getUserCredentials(req.Email)
+	if err != nil {
+		logResponse("/login", "Invalid credentials", nil)
+		encodeError(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	// Compare password with stored hash
+	err = bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(req.Password))
+	if err != nil {
+		logResponse("/login", "Invalid credentials", nil)
+		encodeError(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	// Generate JWT token
+	token, err := generateJWT(userId)
+	if err != nil {
+		logResponse("/login", "Error generating token", err)
+		encodeError(w, "Error generating token", http.StatusInternalServerError)
+		return
+	}
+
+	logResponse("/login", "User logged in successfully", nil)
+
+	// Return the JWT token
+	response := LoginResponse{
+		Token: token,
+		Email: req.Email,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+// generateJWT creates a new JWT token for the given user ID
+func generateJWT(userId string) (string, error) {
+	// Get JWT secret key from environment variable
+	secretKey := getAPIKey("JWT_SECRET_KEY")
+	if secretKey == "" {
+		return "", errors.New("JWT secret key not configured")
+	}
+
+	// Create a new token with claims
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"userId": userId,
+		"exp":    time.Now().Add(time.Hour * 24 * 7).Unix(), // Token expires in 7 days
+	})
+
+	// Sign the token with the secret key
+	tokenString, err := token.SignedString([]byte(secretKey))
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
 }
 
 func animationHandler(w http.ResponseWriter, r *http.Request) {

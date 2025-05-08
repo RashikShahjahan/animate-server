@@ -96,6 +96,19 @@ func initDB() error {
 		return err
 	}
 
+	// Create users table if it doesn't exist
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id VARCHAR(32) PRIMARY KEY,
+			email VARCHAR(255) UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
 	// Execute init SQL script
 	err = executeInitScript()
 	if err != nil {
@@ -141,6 +154,71 @@ func executeInitScript() error {
 	}
 
 	return nil
+}
+
+// userExists checks if a user with the given email already exists
+func userExists(email string) bool {
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)", email).Scan(&exists)
+	if err != nil {
+		log.Printf("[DB ERROR] Failed to check if user exists: %v", err)
+		return false
+	}
+	return exists
+}
+
+// createUser stores a new user in the database and returns the user ID
+func createUser(email, passwordHash string) (string, error) {
+	if email == "" || passwordHash == "" {
+		log.Printf("[DB ERROR] Cannot create user with empty email or password")
+		return "", errors.New("email and password hash cannot be empty")
+	}
+
+	// Generate a random ID
+	idBytes := make([]byte, 8)
+	_, err := rand.Read(idBytes)
+	if err != nil {
+		log.Printf("[DB ERROR] Failed to generate random ID: %v", err)
+		return "", err
+	}
+	id := base64.URLEncoding.EncodeToString(idBytes)
+
+	log.Printf("[DB] Creating user with ID: %s", id)
+
+	// Store the user in the database
+	_, err = db.Exec("INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)", id, email, passwordHash)
+	if err != nil {
+		log.Printf("[DB ERROR] Failed to create user: %v", err)
+		return "", err
+	}
+
+	log.Printf("[DB] User created successfully with ID: %s", id)
+	return id, nil
+}
+
+// getUserCredentials retrieves a user's ID and password hash by email
+func getUserCredentials(email string) (string, string, error) {
+	if email == "" {
+		log.Printf("[DB ERROR] Cannot retrieve user with empty email")
+		return "", "", errors.New("email cannot be empty")
+	}
+
+	log.Printf("[DB] Retrieving user credentials for email: %s", email)
+
+	// Retrieve the user from the database
+	var id string
+	var passwordHash string
+	err := db.QueryRow("SELECT id, password_hash FROM users WHERE email = $1", email).Scan(&id, &passwordHash)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[DB ERROR] User not found with email: %s", email)
+			return "", "", errors.New("user not found")
+		}
+		log.Printf("[DB ERROR] Failed to retrieve user from database: %v", err)
+		return "", "", err
+	}
+
+	return id, passwordHash, nil
 }
 
 // saveAnimation stores an animation code in the database and returns its ID
