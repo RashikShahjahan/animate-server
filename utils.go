@@ -195,7 +195,13 @@ func generateAnimationWithClaude(description string, apiKey string) (string, err
 // encodeError writes a JSON error response
 func encodeError(w http.ResponseWriter, message string, statusCode int) {
 	w.WriteHeader(statusCode)
-	response := AnimationResponse{Error: message}
+	response := struct {
+		Error  string `json:"error"`
+		Status int    `json:"status"`
+	}{
+		Error:  message,
+		Status: statusCode,
+	}
 	json.NewEncoder(w).Encode(response)
 }
 

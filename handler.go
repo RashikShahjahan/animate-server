@@ -264,11 +264,19 @@ func getAnimationHandler(w http.ResponseWriter, r *http.Request) {
 
 	logRequest("/animation/{id}", "Retrieving animation ID: "+id)
 
+	// First check if the animation exists
+	if !animationExists(id) {
+		logResponse("/animation/{id}", "Animation not found with ID: "+id, nil)
+		encodeError(w, "Animation not found", http.StatusNotFound)
+		return
+	}
+
 	// Retrieve the animation from the database
 	code, description, err := getAnimation(id)
 	if err != nil {
 		logResponse("/animation/{id}", "Error retrieving animation ID: "+id, err)
-		encodeError(w, "Error retrieving animation: "+err.Error(), http.StatusNotFound)
+		// Always keep the Content-Type as application/json for consistent error handling
+		encodeError(w, "Error retrieving animation: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

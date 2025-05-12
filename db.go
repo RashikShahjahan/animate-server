@@ -188,11 +188,6 @@ func userExists(email string) bool {
 	return exists
 }
 
-// createUser stores a new user in the database and returns the user ID
-func createUser(email, passwordHash string) (string, error) {
-	return createUserWithUsername(email, "", passwordHash)
-}
-
 // createUserWithUsername stores a new user with username in the database and returns the user ID
 func createUserWithUsername(email, username, passwordHash string) (string, error) {
 	if email == "" || passwordHash == "" {
@@ -331,4 +326,19 @@ func getUserDetails(userId string) (User, error) {
 	}
 
 	return user, nil
+}
+
+// animationExists checks if an animation with the given ID exists
+func animationExists(id string) bool {
+	if id == "" {
+		return false
+	}
+
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM animations WHERE id = $1)", id).Scan(&exists)
+	if err != nil {
+		log.Printf("[DB ERROR] Failed to check if animation exists: %v", err)
+		return false
+	}
+	return exists
 }
