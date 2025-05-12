@@ -34,6 +34,38 @@ type FixAnimationRequest struct {
 	ErrorMessage string `json:"error_message"`
 }
 
+// RegisterRequest represents the user registration request
+type RegisterRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// RegisterResponse represents the response after successful registration
+type RegisterResponse struct {
+	Token string `json:"token"`
+	User  User   `json:"user"`
+}
+
+// LoginRequest represents the user login request
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// LoginResponse represents the response after successful login
+type LoginResponse struct {
+	Token string `json:"token"`
+	User  User   `json:"user"`
+}
+
+// User represents user information
+type User struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
 // Claude API request structure
 type ClaudeRequest struct {
 	Model       string          `json:"model"`

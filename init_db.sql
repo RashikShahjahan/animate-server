@@ -29,4 +29,17 @@ BEGIN
     ) THEN
         ALTER TABLE animations ADD COLUMN description TEXT;
     END IF;
+END $$;
+
+-- Add username column to users table if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'users'
+        AND column_name = 'username'
+    ) THEN
+        ALTER TABLE users ADD COLUMN username VARCHAR(255);
+    END IF;
 END $$; 

@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -11,24 +13,100 @@ import (
 	"strings"
 )
 
-// logRequest logs details about an API request
-func logRequest(endpoint string, requestDetails string) {
-	log.Printf("[REQUEST] %s - %s", endpoint, requestDetails)
+// Context utilities for user authentication
+
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+// User context key
+const userIDKey contextKey = "userID"
+
+// setUserIDInContext adds a user ID to the request context
+func setUserIDInContext(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
 }
 
-// logResponse logs details about an API response
-func logResponse(endpoint string, responseDetails string, err error) {
+// logRequest logs the request details
+func logRequest(endpoint, message string) {
+	log.Printf("[REQUEST] %s - %s", endpoint, message)
+}
+
+// logResponse logs the response details
+func logResponse(endpoint, message string, err error) {
 	if err != nil {
-		log.Printf("[ERROR] %s - %s - %v", endpoint, responseDetails, err)
+		log.Printf("[RESPONSE] %s - %s: %v", endpoint, message, err)
 	} else {
-		log.Printf("[RESPONSE] %s - %s", endpoint, responseDetails)
+		log.Printf("[RESPONSE] %s - %s", endpoint, message)
 	}
 }
 
-// getAPIKey retrieves the API key from environment variables
-// Returns the API key or an empty string if not found
-func getAPIKey(key string) string {
-	return os.Getenv(key)
+// getAPIKey retrieves an API key from environment variables
+func getAPIKey(keyName string) string {
+	// Load environment variables if needed
+	if os.Getenv(keyName) == "" {
+		if err := loadEnvFile(); err != nil {
+			log.Printf("Warning: Failed to load environment variables: %v", err)
+		}
+	}
+
+	// Get the API key
+	apiKey := os.Getenv(keyName)
+	if apiKey == "" {
+		log.Printf("Warning: API key '%s' not found in environment variables", keyName)
+	}
+
+	return apiKey
+}
+
+// loadEnvFile loads environment variables from .env file
+func loadEnvFile() error {
+	// Open .env file
+	envFile, err := os.Open(".env")
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Try env.example instead
+			envFile, err = os.Open("env.example")
+			if err != nil {
+				return fmt.Errorf("no .env or env.example file found: %v", err)
+			}
+		} else {
+			return fmt.Errorf("failed to open .env file: %v", err)
+		}
+	}
+	defer envFile.Close()
+
+	// Read .env file
+	content, err := io.ReadAll(envFile)
+	if err != nil {
+		return fmt.Errorf("failed to read .env file: %v", err)
+	}
+
+	// Parse .env file
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Remove quotes if present
+		value = strings.Trim(value, `"'`)
+
+		// Set environment variable
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
+
+	return nil
 }
 
 // generateAnimationWithClaude calls Claude API to generate p5.js animation from description
@@ -143,86 +221,4 @@ func sanitizeSketchCode(raw string) string {
 		code = "new p5(function(p) {\n" + code + "\n});"
 	}
 	return code
-}
-
-// fixAnimationWithClaude calls Claude API to fix broken p5.js animation code
-func fixAnimationWithClaude(brokenCode string, errorMessage string, apiKey string) (string, error) {
-	log.Printf("[CLAUDE] Fixing animation with error: %s", errorMessage)
-
-	// Prepare the Claude API request
-	prompt := `Fix this broken p5.js animation code. Here's the code:
-
-` + brokenCode + `
-
-The error message is:
-` + errorMessage + `
-
-Please provide only the fixed JavaScript code that solves this error. Use p5.js instance mode and make sure all p5 functions and properties are prefixed with 'p.'. Return only valid JavaScript code without any markdown, explanations, or comments about the changes.`
-
-	claudeReq := ClaudeRequest{
-		Model: "claude-3-7-sonnet-20250219",
-		Messages: []ClaudeMessage{
-			{
-				Role:    "user",
-				Content: prompt,
-			},
-		},
-		MaxTokens:   4000,
-		Temperature: 0.3,
-	}
-
-	// Convert request to JSON
-	reqBody, err := json.Marshal(claudeReq)
-	if err != nil {
-		log.Printf("[CLAUDE ERROR] Failed to marshal request: %v", err)
-		return "", err
-	}
-
-	// Create HTTP request to Claude API
-	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(reqBody))
-	if err != nil {
-		log.Printf("[CLAUDE ERROR] Failed to create request: %v", err)
-		return "", err
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	// Send the request
-	log.Printf("[CLAUDE] Sending request to API")
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("[CLAUDE ERROR] Failed to send request: %v", err)
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	// Read the response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("[CLAUDE ERROR] Failed to read response: %v", err)
-		return "", err
-	}
-
-	// Parse the response
-	var claudeResp ClaudeResponse
-	if err := json.Unmarshal(body, &claudeResp); err != nil {
-		log.Printf("[CLAUDE ERROR] Failed to unmarshal response: %v", err)
-		return "", err
-	}
-
-	log.Printf("[CLAUDE] Response received successfully")
-
-	// Extract the fixed animation code from the response
-	var fixedCode string
-	for _, content := range claudeResp.Content {
-		if content.Type == "text" {
-			fixedCode += content.Text
-		}
-	}
-
-	return fixedCode, nil
 }
