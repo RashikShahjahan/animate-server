@@ -66,6 +66,26 @@ func initDB() error {
 			return fmt.Errorf("failed to create database: %v", err)
 		}
 		log.Printf("Database '%s' created successfully", dbName)
+
+		// Special case for migration: Check if users table exists but doesn't have username column
+		_, err = dbPostgres.Exec(fmt.Sprintf(`
+			DO $$
+			BEGIN
+				IF EXISTS (
+					SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'users'
+				) AND NOT EXISTS (
+					SELECT 1 FROM information_schema.columns 
+					WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'username'
+				) THEN
+					-- Add username column to users table
+					ALTER TABLE users ADD COLUMN username VARCHAR(255);
+				END IF;
+			END
+			$$;
+		`))
+		if err != nil {
+			log.Printf("Warning: Could not check or perform migration: %v", err)
+		}
 	}
 
 	// Now connect to our target database
@@ -101,6 +121,7 @@ func initDB() error {
 		CREATE TABLE IF NOT EXISTS users (
 			id VARCHAR(32) PRIMARY KEY,
 			email VARCHAR(255) UNIQUE NOT NULL,
+			username VARCHAR(255),
 			password_hash TEXT NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
@@ -169,6 +190,11 @@ func userExists(email string) bool {
 
 // createUser stores a new user in the database and returns the user ID
 func createUser(email, passwordHash string) (string, error) {
+	return createUserWithUsername(email, "", passwordHash)
+}
+
+// createUserWithUsername stores a new user with username in the database and returns the user ID
+func createUserWithUsername(email, username, passwordHash string) (string, error) {
 	if email == "" || passwordHash == "" {
 		log.Printf("[DB ERROR] Cannot create user with empty email or password")
 		return "", errors.New("email and password hash cannot be empty")
@@ -186,7 +212,8 @@ func createUser(email, passwordHash string) (string, error) {
 	log.Printf("[DB] Creating user with ID: %s", id)
 
 	// Store the user in the database
-	_, err = db.Exec("INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)", id, email, passwordHash)
+	_, err = db.Exec("INSERT INTO users (id, email, username, password_hash) VALUES ($1, $2, $3, $4)",
+		id, email, username, passwordHash)
 	if err != nil {
 		log.Printf("[DB ERROR] Failed to create user: %v", err)
 		return "", err
@@ -280,4 +307,28 @@ func getAnimation(id string) (string, string, error) {
 
 	log.Printf("[DB] Animation retrieved successfully with ID: %s", id)
 	return code, descriptionValue, nil
+}
+
+// getUserDetails retrieves user details by ID
+func getUserDetails(userId string) (User, error) {
+	if userId == "" {
+		log.Printf("[DB ERROR] Cannot retrieve user with empty ID")
+		return User{}, errors.New("user ID cannot be empty")
+	}
+
+	log.Printf("[DB] Retrieving user details for ID: %s", userId)
+
+	// Retrieve the user from the database
+	var user User
+	err := db.QueryRow("SELECT id, username, email FROM users WHERE id = $1", userId).Scan(&user.ID, &user.Username, &user.Email)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[DB ERROR] User not found with ID: %s", userId)
+			return User{}, errors.New("user not found")
+		}
+		log.Printf("[DB ERROR] Failed to retrieve user from database: %v", err)
+		return User{}, err
+	}
+
+	return user, nil
 }

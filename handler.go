@@ -31,7 +31,6 @@ func setupRouter() *mux.Router {
 	// Protected routes
 	protected.HandleFunc("/generate-animation", animationHandler).Methods(http.MethodPost, http.MethodOptions)
 	protected.HandleFunc("/save-animation", saveAnimationHandler).Methods(http.MethodPost, http.MethodOptions)
-	protected.HandleFunc("/fix-animation", fixAnimationHandler).Methods(http.MethodPost, http.MethodOptions)
 
 	return r
 }
@@ -48,9 +47,9 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate request
-	if req.Email == "" || req.Password == "" {
-		logResponse("/register", "Email and password are required", nil)
-		encodeError(w, "Email and password are required", http.StatusBadRequest)
+	if req.Email == "" || req.Password == "" || req.Username == "" {
+		logResponse("/register", "Username, email and password are required", nil)
+		encodeError(w, "Username, email and password are required", http.StatusBadRequest)
 		return
 	}
 
@@ -70,7 +69,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the user in the database
-	userId, err := createUser(req.Email, string(hashedPassword))
+	userId, err := createUserWithUsername(req.Email, req.Username, string(hashedPassword))
 	if err != nil {
 		logResponse("/register", "Error creating user", err)
 		encodeError(w, "Error creating user: "+err.Error(), http.StatusInternalServerError)
@@ -87,10 +86,14 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 
 	logResponse("/register", "User registered successfully", nil)
 
-	// Return the JWT token
-	response := LoginResponse{
+	// Return the JWT token and user information
+	response := RegisterResponse{
 		Token: token,
-		Email: req.Email,
+		User: User{
+			ID:       userId,
+			Email:    req.Email,
+			Username: req.Username,
+		},
 	}
 	json.NewEncoder(w).Encode(response)
 }
@@ -137,12 +140,20 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get user details
+	user, err := getUserDetails(userId)
+	if err != nil {
+		logResponse("/login", "Error retrieving user details", err)
+		encodeError(w, "Error retrieving user details", http.StatusInternalServerError)
+		return
+	}
+
 	logResponse("/login", "User logged in successfully", nil)
 
-	// Return the JWT token
+	// Return the JWT token and user information
 	response := LoginResponse{
 		Token: token,
-		Email: req.Email,
+		User:  user,
 	}
 	json.NewEncoder(w).Encode(response)
 }
@@ -265,57 +276,5 @@ func getAnimationHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Return the animation code
 	response := GetAnimationResponse{Code: code, Description: description}
-	json.NewEncoder(w).Encode(response)
-}
-
-func fixAnimationHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	// Parse the request body
-	var req FixAnimationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logResponse("/fix-animation", "Invalid request format", err)
-		encodeError(w, "Invalid request format", http.StatusBadRequest)
-		return
-	}
-
-	// Validate request
-	if req.BrokenCode == "" {
-		logResponse("/fix-animation", "Broken code cannot be empty", nil)
-		encodeError(w, "Broken code cannot be empty", http.StatusBadRequest)
-		return
-	}
-
-	if req.ErrorMessage == "" {
-		logResponse("/fix-animation", "Error message cannot be empty", nil)
-		encodeError(w, "Error message cannot be empty", http.StatusBadRequest)
-		return
-	}
-
-	logRequest("/fix-animation", "Error message: "+req.ErrorMessage)
-
-	// Get Claude API key from environment variable
-	claudeAPIKey := getAPIKey("CLAUDE_API_KEY")
-	if claudeAPIKey == "" {
-		logResponse("/fix-animation", "Claude API key not configured", nil)
-		encodeError(w, "Claude API key not configured", http.StatusInternalServerError)
-		return
-	}
-
-	// Fix animation with Claude
-	fixedCode, err := fixAnimationWithClaude(req.BrokenCode, req.ErrorMessage, claudeAPIKey)
-	if err != nil {
-		logResponse("/fix-animation", "Error fixing animation", err)
-		encodeError(w, "Error fixing animation: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Sanitize the animation code by removing markdown fences
-	fixedCode = sanitizeSketchCode(fixedCode)
-
-	logResponse("/fix-animation", "Animation fixed successfully", nil)
-
-	// Return the fixed animation code
-	response := AnimationResponse{Code: fixedCode}
 	json.NewEncoder(w).Encode(response)
 }
