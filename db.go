@@ -342,3 +342,40 @@ func animationExists(id string) bool {
 	}
 	return exists
 }
+
+// getRandomAnimation retrieves a single random animation from the database
+func getRandomAnimation() (GetAnimationResponse, error) {
+	log.Printf("[DB] Retrieving random animation")
+
+	// Query to get a random animation
+	var id string
+	var code string
+	var description sql.NullString
+
+	// PostgreSQL's RANDOM() function to select a random row
+	err := db.QueryRow("SELECT id, code, description FROM animations ORDER BY RANDOM() LIMIT 1").Scan(&id, &code, &description)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[DB ERROR] No animations found in database")
+			return GetAnimationResponse{}, errors.New("no animations found")
+		}
+		log.Printf("[DB ERROR] Failed to retrieve random animation: %v", err)
+		return GetAnimationResponse{}, err
+	}
+
+	// Handle NULL description
+	descriptionValue := ""
+	if description.Valid {
+		descriptionValue = description.String
+	}
+
+	// Create response
+	animation := GetAnimationResponse{
+		ID:          id,
+		Code:        code,
+		Description: descriptionValue,
+	}
+
+	log.Printf("[DB] Random animation retrieved successfully with ID: %s", id)
+	return animation, nil
+}

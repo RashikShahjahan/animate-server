@@ -23,6 +23,7 @@ func setupRouter() *mux.Router {
 	r.HandleFunc("/register", registerHandler).Methods(http.MethodPost, http.MethodOptions)
 	r.HandleFunc("/login", loginHandler).Methods(http.MethodPost, http.MethodOptions)
 	r.HandleFunc("/animation/{id}", getAnimationHandler).Methods(http.MethodGet)
+	r.HandleFunc("/feed", getFeedHandler).Methods(http.MethodGet)
 
 	// Create a subrouter for protected routes
 	protected := r.PathPrefix("").Subrouter()
@@ -283,6 +284,29 @@ func getAnimationHandler(w http.ResponseWriter, r *http.Request) {
 	logResponse("/animation/{id}", "Animation retrieved successfully", nil)
 
 	// Return the animation code
-	response := GetAnimationResponse{Code: code, Description: description}
+	response := GetAnimationResponse{
+		ID:          id,
+		Code:        code,
+		Description: description,
+	}
 	json.NewEncoder(w).Encode(response)
+}
+
+func getFeedHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	logRequest("/feed", "Retrieving random animation")
+
+	// Retrieve a random animation from the database
+	animation, err := getRandomAnimation()
+	if err != nil {
+		logResponse("/feed", "Error retrieving random animation", err)
+		encodeError(w, "Error retrieving random animation: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logResponse("/feed", "Random animation retrieved successfully: "+animation.ID, nil)
+
+	// Return the random animation
+	json.NewEncoder(w).Encode(animation)
 }
