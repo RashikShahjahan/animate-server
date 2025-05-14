@@ -25,9 +25,12 @@ type GetAnimationRequest struct {
 }
 
 type GetAnimationResponse struct {
+	ID          string `json:"id"`
 	Code        string `json:"code"`
 	Description string `json:"description"`
 }
+
+type GetAnimationFeedResponse []GetAnimationResponse
 
 type FixAnimationRequest struct {
 	BrokenCode   string `json:"broken_code"`
