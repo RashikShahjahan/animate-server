@@ -130,6 +130,22 @@ func initDB() error {
 		return err
 	}
 
+	// Create user_moods table if it doesn't exist
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS user_moods (
+			id SERIAL PRIMARY KEY,
+			user_id VARCHAR(32) NOT NULL,
+			animation_id VARCHAR(32) NOT NULL,
+			mood VARCHAR(20) NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id),
+			FOREIGN KEY (animation_id) REFERENCES animations(id)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
 	// Execute init SQL script
 	err = executeInitScript()
 	if err != nil {
@@ -378,4 +394,25 @@ func getRandomAnimation() (GetAnimationResponse, error) {
 
 	log.Printf("[DB] Random animation retrieved successfully with ID: %s", id)
 	return animation, nil
+}
+
+// saveMood stores a user's mood reaction to an animation
+func saveMood(userId string, animationId string, mood string) error {
+	if userId == "" || animationId == "" || mood == "" {
+		log.Printf("[DB ERROR] Cannot save mood with empty user ID, animation ID, or mood value")
+		return errors.New("user ID, animation ID, and mood cannot be empty")
+	}
+
+	log.Printf("[DB] Saving mood for user ID: %s, animation ID: %s, mood: %s", userId, animationId, mood)
+
+	// Store the mood in the database
+	_, err := db.Exec("INSERT INTO user_moods (user_id, animation_id, mood) VALUES ($1, $2, $3)",
+		userId, animationId, mood)
+	if err != nil {
+		log.Printf("[DB ERROR] Failed to save mood to database: %v", err)
+		return err
+	}
+
+	log.Printf("[DB] Mood saved successfully for user ID: %s, animation ID: %s", userId, animationId)
+	return nil
 }

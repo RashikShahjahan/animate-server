@@ -11,6 +11,29 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Mood represents a user's mood after viewing an animation
+type Mood string
+
+// Valid mood values
+const (
+	MoodMuchWorse  Mood = "much worse"
+	MoodWorse      Mood = "worse"
+	MoodSame       Mood = "same"
+	MoodBetter     Mood = "better"
+	MoodMuchBetter Mood = "much better"
+)
+
+// SaveMoodRequest represents the request to save a user's mood
+type SaveMoodRequest struct {
+	AnimationID string `json:"animationId"`
+	Mood        Mood   `json:"mood"`
+}
+
+// SaveMoodResponse represents the response from save-mood endpoint
+type SaveMoodResponse struct {
+	Success bool `json:"success"`
+}
+
 // setupRouter configures and returns the application router
 func setupRouter() *mux.Router {
 	r := mux.NewRouter()
@@ -32,6 +55,7 @@ func setupRouter() *mux.Router {
 	// Protected routes
 	protected.HandleFunc("/generate-animation", animationHandler).Methods(http.MethodPost, http.MethodOptions)
 	protected.HandleFunc("/save-animation", saveAnimationHandler).Methods(http.MethodPost, http.MethodOptions)
+	protected.HandleFunc("/save-mood", saveMoodHandler).Methods(http.MethodPost, http.MethodOptions)
 
 	return r
 }
@@ -309,4 +333,74 @@ func getFeedHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Return the random animation
 	json.NewEncoder(w).Encode(animation)
+}
+
+func saveMoodHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse the request body
+	var req SaveMoodRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logResponse("/save-mood", "Invalid request format", err)
+		encodeError(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if req.AnimationID == "" {
+		logResponse("/save-mood", "Animation ID cannot be empty", nil)
+		encodeError(w, "Animation ID cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	// Validate mood
+	validMood := false
+	for _, mood := range []Mood{MoodMuchWorse, MoodWorse, MoodSame, MoodBetter, MoodMuchBetter} {
+		if req.Mood == mood {
+			validMood = true
+			break
+		}
+	}
+	if !validMood {
+		logResponse("/save-mood", "Invalid mood value", nil)
+		encodeError(w, "Invalid mood value", http.StatusBadRequest)
+		return
+	}
+
+	// Check if animation exists
+	if !animationExists(req.AnimationID) {
+		logResponse("/save-mood", "Animation not found with ID: "+req.AnimationID, nil)
+		encodeError(w, "Animation not found", http.StatusNotFound)
+		return
+	}
+
+	// Get user ID from context using the correct context key
+	userIDCtxKey := contextKey("userID")
+	userIdValue := r.Context().Value(userIDCtxKey)
+	if userIdValue == nil {
+		logResponse("/save-mood", "User ID missing from context", nil)
+		encodeError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	userId, ok := userIdValue.(string)
+	if !ok {
+		logResponse("/save-mood", "User ID has invalid type", nil)
+		encodeError(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Save the mood to the database
+	err := saveMood(userId, req.AnimationID, string(req.Mood))
+	if err != nil {
+		logResponse("/save-mood", "Error saving mood", err)
+		encodeError(w, "Error saving mood: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logResponse("/save-mood", "Mood saved successfully", nil)
+
+	// Return success response
+	response := SaveMoodResponse{Success: true}
+	json.NewEncoder(w).Encode(response)
 }
