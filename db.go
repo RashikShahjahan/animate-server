@@ -388,7 +388,8 @@ func getUserDetails(userId string) (User, error) {
 
 	// Retrieve the user from the database
 	var user User
-	err := db.QueryRow("SELECT id, username, email FROM users WHERE id = $1", userId).Scan(&user.ID, &user.Username, &user.Email)
+	var lastLogin sql.NullTime
+	err := db.QueryRow("SELECT id, username, email, last_login FROM users WHERE id = $1", userId).Scan(&user.ID, &user.Username, &user.Email, &lastLogin)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[DB ERROR] User not found with ID: %s", userId)
@@ -396,6 +397,18 @@ func getUserDetails(userId string) (User, error) {
 		}
 		log.Printf("[DB ERROR] Failed to retrieve user from database: %v", err)
 		return User{}, err
+	}
+
+	// Handle NULL last_login
+	if lastLogin.Valid {
+		user.LastLogin = &lastLogin.Time
+	}
+
+	// Update last login time
+	_, err = db.Exec("UPDATE users SET last_login = NOW() WHERE id = $1", userId)
+	if err != nil {
+		log.Printf("[DB WARNING] Failed to update last login time: %v", err)
+		// Continue anyway, this is not a critical error
 	}
 
 	return user, nil

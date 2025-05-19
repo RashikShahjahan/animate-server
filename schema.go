@@ -1,5 +1,9 @@
 package main
 
+import (
+	"time"
+)
+
 // AnimationRequest represents the request for animation generation
 type AnimationRequest struct {
 	Description string `json:"description"`
@@ -64,9 +68,10 @@ type LoginResponse struct {
 
 // User represents user information
 type User struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	ID        string     `json:"id"`
+	Username  string     `json:"username"`
+	Email     string     `json:"email"`
+	LastLogin *time.Time `json:"lastLogin,omitempty"`
 }
 
 // Claude API request structure
