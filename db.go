@@ -17,10 +17,13 @@ var db *sql.DB
 
 // initDB initializes the PostgreSQL database connection
 func initDB() error {
+	log.Println("[DB] Initializing database connection...")
+
 	// Load environment variables from .env file if they haven't been loaded yet
 	if os.Getenv("DB_HOST") == "" && os.Getenv("DB_USER") == "" && os.Getenv("DB_PASSWORD") == "" {
+		log.Println("[DB] Environment variables not found, attempting to load from .env file")
 		if err := godotenv.Load(); err != nil {
-			log.Println("Warning: .env file not found or could not be loaded")
+			log.Println("[DB] Warning: .env file not found or could not be loaded")
 		}
 	}
 
@@ -31,15 +34,21 @@ func initDB() error {
 	dbPassword := os.Getenv("DB_PASSWORD")
 	dbName := os.Getenv("DB_NAME")
 
+	// Set defaults if environment variables are not set
 	if dbHost == "" {
 		dbHost = "localhost"
+		log.Println("[DB] Using default host: localhost")
 	}
 	if dbPort == "" {
 		dbPort = "5432"
+		log.Println("[DB] Using default port: 5432")
 	}
 	if dbName == "" {
 		dbName = "animations"
+		log.Println("[DB] Using default database name: animations")
 	}
+
+	log.Printf("[DB] Connecting to PostgreSQL at %s:%s", dbHost, dbPort)
 
 	// First, connect to the 'postgres' database to check if our target database exists
 	connStrPostgres := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=postgres sslmode=disable",
@@ -51,6 +60,12 @@ func initDB() error {
 	}
 	defer dbPostgres.Close()
 
+	// Check if we can connect
+	if err = dbPostgres.Ping(); err != nil {
+		return fmt.Errorf("failed to ping postgres database: %v", err)
+	}
+	log.Println("[DB] Successfully connected to PostgreSQL")
+
 	// Check if our database exists
 	var exists bool
 	err = dbPostgres.QueryRow("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbName).Scan(&exists)
@@ -60,32 +75,14 @@ func initDB() error {
 
 	// If database doesn't exist, create it
 	if !exists {
-		log.Printf("Database '%s' does not exist, creating it...", dbName)
+		log.Printf("[DB] Database '%s' does not exist, creating it...", dbName)
 		_, err = dbPostgres.Exec(fmt.Sprintf("CREATE DATABASE %s", dbName))
 		if err != nil {
 			return fmt.Errorf("failed to create database: %v", err)
 		}
-		log.Printf("Database '%s' created successfully", dbName)
-
-		// Special case for migration: Check if users table exists but doesn't have username column
-		_, err = dbPostgres.Exec(fmt.Sprintf(`
-			DO $$
-			BEGIN
-				IF EXISTS (
-					SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'users'
-				) AND NOT EXISTS (
-					SELECT 1 FROM information_schema.columns 
-					WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'username'
-				) THEN
-					-- Add username column to users table
-					ALTER TABLE users ADD COLUMN username VARCHAR(255);
-				END IF;
-			END
-			$$;
-		`))
-		if err != nil {
-			log.Printf("Warning: Could not check or perform migration: %v", err)
-		}
+		log.Printf("[DB] Database '%s' created successfully", dbName)
+	} else {
+		log.Printf("[DB] Database '%s' already exists", dbName)
 	}
 
 	// Now connect to our target database
@@ -95,13 +92,17 @@ func initDB() error {
 	// Connect to the PostgreSQL database
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to connect to %s database: %v", dbName, err)
 	}
 
 	// Check the connection
 	if err = db.Ping(); err != nil {
-		return err
+		return fmt.Errorf("failed to ping %s database: %v", dbName, err)
 	}
+	log.Printf("[DB] Successfully connected to '%s' database", dbName)
+
+	// Create tables
+	log.Println("[DB] Setting up database tables...")
 
 	// Create animations table if it doesn't exist
 	_, err = db.Exec(`
@@ -113,8 +114,9 @@ func initDB() error {
 		)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create animations table: %v", err)
 	}
+	log.Println("[DB] Animations table created or already exists")
 
 	// Create users table if it doesn't exist
 	_, err = db.Exec(`
@@ -127,8 +129,9 @@ func initDB() error {
 		)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create users table: %v", err)
 	}
+	log.Println("[DB] Users table created or already exists")
 
 	// Create user_moods table if it doesn't exist
 	_, err = db.Exec(`
@@ -143,30 +146,80 @@ func initDB() error {
 		)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create user_moods table: %v", err)
+	}
+	log.Println("[DB] User_moods table created or already exists")
+
+	// Create indexes for better query performance
+	log.Println("[DB] Creating indexes...")
+
+	// Add index on animations table for faster lookups
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_animations_id ON animations(id)`)
+	if err != nil {
+		log.Printf("[DB] Warning: Failed to create index on animations table: %v", err)
+	}
+
+	// Add indexes on user_moods table for faster lookups
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_moods_user_id ON user_moods(user_id)`)
+	if err != nil {
+		log.Printf("[DB] Warning: Failed to create user_id index on user_moods table: %v", err)
+	}
+
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_moods_animation_id ON user_moods(animation_id)`)
+	if err != nil {
+		log.Printf("[DB] Warning: Failed to create animation_id index on user_moods table: %v", err)
+	}
+
+	// Add index on email for faster user lookups
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`)
+	if err != nil {
+		log.Printf("[DB] Warning: Failed to create email index on users table: %v", err)
+	}
+
+	// Perform any necessary migrations for existing databases
+	log.Println("[DB] Checking for necessary database migrations...")
+	if err := performDatabaseMigrations(); err != nil {
+		log.Printf("[DB] Warning: Some database migrations may have failed: %v", err)
 	}
 
 	// Execute init SQL script
+	log.Println("[DB] Executing initialization SQL script...")
 	err = executeInitScript()
 	if err != nil {
-		log.Printf("Warning: Failed to execute init SQL script: %v", err)
+		log.Printf("[DB] Warning: Failed to execute init SQL script: %v", err)
 	} else {
-		log.Println("Init SQL script executed successfully")
+		log.Println("[DB] Init SQL script executed successfully")
 	}
 
+	log.Println("[DB] Database initialization completed successfully")
 	return nil
 }
 
 // executeInitScript reads and executes the init_db.sql script
 func executeInitScript() error {
+	log.Println("[DB] Reading init_db.sql script...")
+
+	// Check if the init SQL file exists
+	if _, err := os.Stat("init_db.sql"); os.IsNotExist(err) {
+		log.Println("[DB] init_db.sql file not found, skipping initialization script")
+		return nil
+	}
+
 	// Read the init SQL file
 	sqlBytes, err := os.ReadFile("init_db.sql")
 	if err != nil {
 		return fmt.Errorf("failed to read init_db.sql: %v", err)
 	}
 
-	sqlContent := string(sqlBytes)
+	if len(sqlBytes) == 0 {
+		log.Println("[DB] init_db.sql file is empty, skipping initialization script")
+		return nil
+	}
 
+	sqlContent := string(sqlBytes)
+	log.Printf("[DB] Loaded init_db.sql (%d bytes)", len(sqlBytes))
+
+	log.Println("[DB] Starting transaction for init script execution...")
 	// Execute the entire script as a single transaction
 	tx, err := db.Begin()
 	if err != nil {
@@ -175,21 +228,25 @@ func executeInitScript() error {
 
 	defer func() {
 		if err != nil {
+			log.Println("[DB] Rolling back transaction due to error")
 			tx.Rollback()
 		}
 	}()
 
 	// Execute the SQL script directly
+	log.Println("[DB] Executing SQL script...")
 	_, err = tx.Exec(sqlContent)
 	if err != nil {
 		return fmt.Errorf("failed to execute SQL script: %v", err)
 	}
 
+	log.Println("[DB] Committing transaction...")
 	err = tx.Commit()
 	if err != nil {
 		return fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
+	log.Println("[DB] Init script executed successfully")
 	return nil
 }
 
@@ -414,5 +471,54 @@ func saveMood(userId string, animationId string, mood string) error {
 	}
 
 	log.Printf("[DB] Mood saved successfully for user ID: %s, animation ID: %s", userId, animationId)
+	return nil
+}
+
+// performDatabaseMigrations runs any necessary database migrations
+func performDatabaseMigrations() error {
+	log.Println("[DB] Checking for necessary database migrations...")
+
+	// Add username column to users table if it doesn't exist
+	_, err := db.Exec(`
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'username'
+			) THEN
+				ALTER TABLE users ADD COLUMN username VARCHAR(255);
+				RAISE NOTICE 'Added username column to users table';
+			END IF;
+		END
+		$$;
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to check/add username column: %v", err)
+	}
+
+	// Check index existence on user_moods (for migrations from older versions)
+	var indexExists bool
+	err = db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM pg_indexes 
+			WHERE tablename = 'user_moods' AND indexname = 'idx_user_moods_user_id'
+		)
+	`).Scan(&indexExists)
+
+	if err != nil {
+		log.Printf("[DB] Warning: Failed to check index existence: %v", err)
+	} else if !indexExists {
+		log.Println("[DB] Creating missing indexes on user_moods table...")
+		_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_moods_user_id ON user_moods(user_id)`)
+		if err != nil {
+			log.Printf("[DB] Warning: Failed to create user_id index: %v", err)
+		}
+
+		_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_moods_animation_id ON user_moods(animation_id)`)
+		if err != nil {
+			log.Printf("[DB] Warning: Failed to create animation_id index: %v", err)
+		}
+	}
+
 	return nil
 }
