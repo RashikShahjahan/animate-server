@@ -51,6 +51,26 @@ CREATE INDEX IF NOT EXISTS idx_user_moods_created_at ON user_moods(created_at);
 CREATE INDEX IF NOT EXISTS idx_user_moods_mood ON user_moods(mood);
 
 -- Add a unique constraint to prevent duplicate mood entries
+DO $$
+BEGIN
+    -- Check if the constraint already exists
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM pg_constraint
+        WHERE conname = 'user_moods_user_animation_key'
+    ) THEN
+        -- Only create if it doesn't already exist
+        BEGIN
+            ALTER TABLE user_moods ADD CONSTRAINT user_moods_user_animation_key UNIQUE (user_id, animation_id);
+            RAISE NOTICE 'Added unique constraint on user_moods(user_id, animation_id)';
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'Could not create unique constraint: %', SQLERRM;
+        END;
+    END IF;
+END
+$$;
+
+-- Create index using IF NOT EXISTS to avoid errors
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_moods_unique_user_animation ON user_moods(user_id, animation_id);
 
 -- Add comments on tables and columns for documentation
@@ -133,7 +153,13 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION refresh_mood_statistics()
 RETURNS TRIGGER AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY mood_statistics_materialized;
+    -- Check if the view exists before attempting to refresh it
+    IF EXISTS (
+        SELECT 1 FROM pg_matviews WHERE matviewname = 'mood_statistics_materialized'
+    ) THEN
+        -- Use a safer approach without CONCURRENTLY for compatibility
+        REFRESH MATERIALIZED VIEW mood_statistics_materialized;
+    END IF;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;

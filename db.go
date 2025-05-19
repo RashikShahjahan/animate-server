@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -386,10 +387,53 @@ func getUserDetails(userId string) (User, error) {
 
 	log.Printf("[DB] Retrieving user details for ID: %s", userId)
 
+	// First check if last_login column exists
+	var hasLastLogin bool
+	err := db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns 
+			WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'last_login'
+		)
+	`).Scan(&hasLastLogin)
+
+	if err != nil {
+		log.Printf("[DB WARNING] Failed to check if last_login column exists: %v", err)
+		hasLastLogin = false
+	}
+
 	// Retrieve the user from the database
 	var user User
-	var lastLogin sql.NullTime
-	err := db.QueryRow("SELECT id, username, email, last_login FROM users WHERE id = $1", userId).Scan(&user.ID, &user.Username, &user.Email, &lastLogin)
+
+	if hasLastLogin {
+		// If last_login exists, include it in the query
+		var lastLogin sql.NullTime
+		err = db.QueryRow("SELECT id, username, email, last_login FROM users WHERE id = $1", userId).Scan(
+			&user.ID, &user.Username, &user.Email, &lastLogin)
+
+		if err == nil && lastLogin.Valid {
+			user.LastLogin = &lastLogin.Time
+		}
+
+		// Update last login time
+		_, updateErr := db.Exec("UPDATE users SET last_login = NOW() WHERE id = $1", userId)
+		if updateErr != nil {
+			log.Printf("[DB WARNING] Failed to update last login time: %v", updateErr)
+		}
+	} else {
+		// If last_login doesn't exist, use simpler query
+		err = db.QueryRow("SELECT id, username, email FROM users WHERE id = $1", userId).Scan(
+			&user.ID, &user.Username, &user.Email)
+
+		// Try to add the column, but don't worry if it fails
+		_, alterErr := db.Exec(`
+			ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
+		`)
+		if alterErr == nil {
+			log.Println("[DB] Added missing last_login column to users table")
+		}
+	}
+
+	// Handle query errors
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[DB ERROR] User not found with ID: %s", userId)
@@ -397,18 +441,6 @@ func getUserDetails(userId string) (User, error) {
 		}
 		log.Printf("[DB ERROR] Failed to retrieve user from database: %v", err)
 		return User{}, err
-	}
-
-	// Handle NULL last_login
-	if lastLogin.Valid {
-		user.LastLogin = &lastLogin.Time
-	}
-
-	// Update last login time
-	_, err = db.Exec("UPDATE users SET last_login = NOW() WHERE id = $1", userId)
-	if err != nil {
-		log.Printf("[DB WARNING] Failed to update last login time: %v", err)
-		// Continue anyway, this is not a critical error
 	}
 
 	return user, nil
@@ -475,12 +507,41 @@ func saveMood(userId string, animationId string, mood string) error {
 
 	log.Printf("[DB] Saving mood for user ID: %s, animation ID: %s, mood: %s", userId, animationId, mood)
 
-	// Store the mood in the database
-	_, err := db.Exec("INSERT INTO user_moods (user_id, animation_id, mood) VALUES ($1, $2, $3)",
-		userId, animationId, mood)
+	// Use upsert to either insert a new record or update existing one
+	_, err := db.Exec(`
+		INSERT INTO user_moods (user_id, animation_id, mood) 
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, animation_id) 
+		DO UPDATE SET 
+			mood = $3,
+			created_at = CURRENT_TIMESTAMP
+	`, userId, animationId, mood)
+
 	if err != nil {
-		log.Printf("[DB ERROR] Failed to save mood to database: %v", err)
-		return err
+		// If the error indicates the constraint doesn't exist, try normal insert
+		if strings.Contains(err.Error(), "relation \"user_moods\" does not exist") ||
+			strings.Contains(err.Error(), "constraint") {
+			log.Printf("[DB] UPSERT failed, trying normal INSERT: %v", err)
+
+			// Delete any existing entries first
+			_, delErr := db.Exec("DELETE FROM user_moods WHERE user_id = $1 AND animation_id = $2",
+				userId, animationId)
+			if delErr != nil {
+				log.Printf("[DB ERROR] Failed to delete existing mood: %v", delErr)
+				// Continue anyway, the insert might still work
+			}
+
+			// Now try the insert
+			_, err = db.Exec("INSERT INTO user_moods (user_id, animation_id, mood) VALUES ($1, $2, $3)",
+				userId, animationId, mood)
+			if err != nil {
+				log.Printf("[DB ERROR] Failed to save mood to database: %v", err)
+				return err
+			}
+		} else {
+			log.Printf("[DB ERROR] Failed to save mood to database: %v", err)
+			return err
+		}
 	}
 
 	log.Printf("[DB] Mood saved successfully for user ID: %s, animation ID: %s", userId, animationId)
@@ -507,6 +568,26 @@ func performDatabaseMigrations() error {
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to check/add username column: %v", err)
+	}
+
+	// Add last_login column to users table if it doesn't exist
+	_, err = db.Exec(`
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'last_login'
+			) THEN
+				ALTER TABLE users ADD COLUMN last_login TIMESTAMP;
+				RAISE NOTICE 'Added last_login column to users table';
+			END IF;
+		END
+		$$;
+	`)
+	if err != nil {
+		log.Printf("[DB] Warning: Failed to check/add last_login column: %v", err)
+	} else {
+		log.Println("[DB] Checked last_login column in users table")
 	}
 
 	// Check index existence on user_moods (for migrations from older versions)
