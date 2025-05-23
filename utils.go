@@ -125,7 +125,7 @@ func generateAnimationWithClaude(description string, apiKey string) (string, err
 		`Do not include any markdown, HTML, CSS, or explanations. Prefix all p5 functions and properties with 'p.'.`
 
 	claudeReq := ClaudeRequest{
-		Model: "claude-3-7-sonnet-20250219",
+		Model: "claude-sonnet-4-20250514",
 		Messages: []ClaudeMessage{
 			{
 				Role:    "user",
