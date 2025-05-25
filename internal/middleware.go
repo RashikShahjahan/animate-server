@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"fmt"
@@ -11,8 +11,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// corsMiddleware adds CORS headers to responses
-func corsMiddleware(next http.Handler) http.Handler {
+// CorsMiddleware adds CORS headers to responses
+func CorsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get allowed origins from environment variable
 		allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
@@ -49,8 +49,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// loggingMiddleware logs information about each request
-func loggingMiddleware(next http.Handler) http.Handler {
+// LoggingMiddleware logs information about each request
+func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -90,8 +90,8 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// authMiddleware verifies JWT token and adds user information to the context
-func authMiddleware(next http.Handler) http.Handler {
+// AuthMiddleware verifies JWT token and adds user information to the context
+func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Allow OPTIONS requests to pass through
 		if r.Method == http.MethodOptions {
@@ -123,7 +123,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			}
 
 			// Get JWT secret key
-			secretKey := getAPIKey("JWT_SECRET_KEY")
+			secretKey := GetAPIKey("JWT_SECRET_KEY")
 			if secretKey == "" {
 				return nil, fmt.Errorf("JWT secret key not configured")
 			}
@@ -147,7 +147,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 			// Add userId to request context
 			ctx := r.Context()
-			ctx = setUserIDInContext(ctx, userId)
+			ctx = SetUserIDInContext(ctx, userId)
 			r = r.WithContext(ctx)
 		} else {
 			http.Error(w, "Invalid token claims", http.StatusUnauthorized)

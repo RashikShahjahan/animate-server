@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bytes"
@@ -21,18 +21,24 @@ type contextKey string
 // User context key
 const userIDKey contextKey = "userID"
 
-// setUserIDInContext adds a user ID to the request context
-func setUserIDInContext(ctx context.Context, userID string) context.Context {
+// SetUserIDInContext adds a user ID to the request context
+func SetUserIDInContext(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, userIDKey, userID)
 }
 
-// logRequest logs the request details
-func logRequest(endpoint, message string) {
+// GetUserIDFromContext retrieves the user ID from the request context
+func GetUserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
+}
+
+// LogRequest logs the request details
+func LogRequest(endpoint, message string) {
 	log.Printf("[REQUEST] %s - %s", endpoint, message)
 }
 
-// logResponse logs the response details
-func logResponse(endpoint, message string, err error) {
+// LogResponse logs the response details
+func LogResponse(endpoint, message string, err error) {
 	if err != nil {
 		log.Printf("[RESPONSE] %s - %s: %v", endpoint, message, err)
 	} else {
@@ -40,8 +46,8 @@ func logResponse(endpoint, message string, err error) {
 	}
 }
 
-// getAPIKey retrieves an API key from environment variables
-func getAPIKey(keyName string) string {
+// GetAPIKey retrieves an API key from environment variables
+func GetAPIKey(keyName string) string {
 	// Load environment variables if needed
 	if os.Getenv(keyName) == "" {
 		if err := loadEnvFile(); err != nil {
@@ -109,8 +115,8 @@ func loadEnvFile() error {
 	return nil
 }
 
-// generateAnimationWithClaude calls Claude API to generate p5.js animation from description
-func generateAnimationWithClaude(description string, apiKey string) (string, error) {
+// GenerateAnimationWithClaude calls Claude API to generate p5.js animation from description
+func GenerateAnimationWithClaude(description string, apiKey string) (string, error) {
 	log.Printf("[CLAUDE] Generating animation for description: %s", description)
 
 	// Prepare the Claude API request
@@ -192,8 +198,8 @@ func generateAnimationWithClaude(description string, apiKey string) (string, err
 	return animationCode, nil
 }
 
-// encodeError writes a JSON error response
-func encodeError(w http.ResponseWriter, message string, statusCode int) {
+// EncodeError writes a JSON error response
+func EncodeError(w http.ResponseWriter, message string, statusCode int) {
 	w.WriteHeader(statusCode)
 	response := struct {
 		Error  string `json:"error"`
@@ -205,26 +211,16 @@ func encodeError(w http.ResponseWriter, message string, statusCode int) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// sanitizeSketchCode removes Markdown fences, prefixes p5.js method calls with 'p.', and wraps code in a p5 instance
-func sanitizeSketchCode(raw string) string {
-	// Extract code inside fences or use raw
-	fenceRegex := regexp.MustCompile("(?s)```(?:js|javascript)?\\n([\\s\\S]*?)```")
-	var code string
-	if matches := fenceRegex.FindStringSubmatch(raw); len(matches) > 1 {
-		code = matches[1]
-	} else {
-		code = raw
+// SanitizeSketchCode cleans up the raw p5.js code from Claude
+func SanitizeSketchCode(raw string) string {
+	// Remove markdown code blocks if present
+	codeBlockRegex := regexp.MustCompile("```(?:javascript|js)?\n?(.*?)\n?```")
+	if matches := codeBlockRegex.FindStringSubmatch(raw); len(matches) > 1 {
+		raw = matches[1]
 	}
-	// Trim whitespace
-	code = strings.TrimSpace(code)
-	// Prefix standalone dot calls with p.
-	dotRe := regexp.MustCompile(`(\W)\.(\w+)`)
-	for i := 0; i < 2; i++ {
-		code = dotRe.ReplaceAllString(code, `$1p.$2`)
-	}
-	// Wrap in p5 instance if not already
-	if !strings.HasPrefix(strings.TrimSpace(code), "new p5") {
-		code = "new p5(function(p) {\n" + code + "\n});"
-	}
-	return code
+
+	// Remove any leading/trailing whitespace
+	raw = strings.TrimSpace(raw)
+
+	return raw
 }

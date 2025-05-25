@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"time"
@@ -97,4 +97,27 @@ type ClaudeResponse struct {
 type ClaudeContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+// Mood represents a user's mood after viewing an animation
+type Mood string
+
+// Valid mood values
+const (
+	MoodMuchWorse  Mood = "much worse"
+	MoodWorse      Mood = "worse"
+	MoodSame       Mood = "same"
+	MoodBetter     Mood = "better"
+	MoodMuchBetter Mood = "much better"
+)
+
+// SaveMoodRequest represents the request to save a user's mood
+type SaveMoodRequest struct {
+	AnimationID string `json:"animationId"`
+	Mood        Mood   `json:"mood"`
+}
+
+// SaveMoodResponse represents the response from save-mood endpoint
+type SaveMoodResponse struct {
+	Success bool `json:"success"`
 }

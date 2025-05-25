@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 
+	"animate-server/internal"
+
 	"github.com/joho/godotenv"
 )
 
@@ -14,13 +16,13 @@ func main() {
 	}
 
 	// Initialize the PostgreSQL database
-	if err := initDB(); err != nil {
+	if err := internal.InitDB(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	log.Println("Connected to PostgreSQL database successfully")
 
 	// Set up the router with Gorilla Mux
-	router := setupRouter()
+	router := internal.SetupRouter()
 
 	// Start the server on port 8080
 	log.Println("Animation Server starting on port 8080...")
