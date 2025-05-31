@@ -74,9 +74,9 @@ $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_moods_unique_user_animation ON user_moods(user_id, animation_id);
 
 -- Add comments on tables and columns for documentation
-COMMENT ON TABLE animations IS 'Stores p5.js animation codes with unique IDs';
+COMMENT ON TABLE animations IS 'Stores Three.js animation codes with unique IDs';
 COMMENT ON COLUMN animations.id IS 'Unique identifier for the animation';
-COMMENT ON COLUMN animations.code IS 'The p5.js animation code';
+COMMENT ON COLUMN animations.code IS 'The Three.js animation code';
 COMMENT ON COLUMN animations.description IS 'Optional description of the animation';
 COMMENT ON COLUMN animations.created_at IS 'Timestamp when the animation was created';
 

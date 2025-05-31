@@ -220,7 +220,7 @@ func animationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sanitize the animation code by removing markdown fences
-	animation = SanitizeSketchCode(animation)
+	animation = SanitizeAnimationCode(animation)
 
 	LogResponse("/generate-animation", "Animation generated successfully", nil)
 

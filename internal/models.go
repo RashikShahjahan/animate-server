@@ -9,7 +9,7 @@ type AnimationRequest struct {
 	Description string `json:"description"`
 }
 
-// AnimationResponse represents the response with p5.js animation
+// AnimationResponse represents the response with Three.js animation
 type AnimationResponse struct {
 	Code  string `json:"code"`
 	Error string `json:"error,omitempty"`
