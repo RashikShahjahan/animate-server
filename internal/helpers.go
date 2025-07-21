@@ -115,36 +115,38 @@ func loadEnvFile() error {
 	return nil
 }
 
-// GenerateAnimationWithClaude calls Claude API to generate Three.js animation from description
+// GenerateAnimationWithClaude calls Claude API to generate p5.js animation from description
 func GenerateAnimationWithClaude(description string, apiKey string) (string, error) {
 	log.Printf("[CLAUDE] Generating animation for description: %s", description)
 
 	// Prepare the Claude API request
-	prompt := `Create a Three.js animation based on this description: "` + description + `". ` +
-		`Your response should ONLY include valid JavaScript code that creates a Three.js scene. The code should:
-1. Create a scene, camera, and renderer
-2. Add the renderer to a DOM element with id "animation-container"
-3. Include an animation loop using requestAnimationFrame
-4. Be self-contained and ready to run
+	prompt := `Create a p5.js animation based on this description: "` + description + `". ` +
+		`Your response should ONLY include valid JavaScript code that creates a p5.js sketch. The code should:
+1. Use p5.js functions like setup() and draw()
+2. Create a canvas that fits the container with id "animation-container"
+3. Include proper animation logic in the draw() function
+4. Be self-contained and ready to run with p5.js library
 
 Example structure:
-// Create scene, camera, and renderer
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.getElementById('animation-container').appendChild(renderer.domElement);
-
-// Add your objects and lights here
-// ...
-
-// Animation loop
-function animate() {
-    requestAnimationFrame(animate);
-    // Animation logic here
-    renderer.render(scene, camera);
+// p5.js sketch setup
+function setup() {
+    let canvas = createCanvas(windowWidth, windowHeight);
+    canvas.parent('animation-container');
+    // Initialize your variables here
 }
-animate();
+
+function draw() {
+    // Clear background
+    background(220);
+    
+    // Your animation logic here
+    // Use frameCount for time-based animations
+}
+
+// Handle window resize
+function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+}
 
 Do not include any markdown, HTML, CSS, or explanations. Only return the JavaScript code.`
 
@@ -232,7 +234,7 @@ func EncodeError(w http.ResponseWriter, message string, statusCode int) {
 // SanitizeAnimationCode cleans up the raw JavaScript code from Claude
 func SanitizeAnimationCode(raw string) string {
 	// Remove markdown code blocks if present
-	codeBlockRegex := regexp.MustCompile("```(?:javascript|js)?\n?(.*?)\n?```")
+	codeBlockRegex := regexp.MustCompile("(?s)```(?:javascript|js)?\n?(.*?)\n?```")
 	if matches := codeBlockRegex.FindStringSubmatch(raw); len(matches) > 1 {
 		raw = matches[1]
 	}

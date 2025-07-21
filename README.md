@@ -1,6 +1,6 @@
 # Animation Server
 
-A server for generating and storing Three.js animations using Claude API.
+A server for generating and storing p5.js animations using Claude API.
 
 
 ## Prerequisites
