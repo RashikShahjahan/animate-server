@@ -301,6 +301,19 @@ func getFeedHandler(w http.ResponseWriter, r *http.Request) {
 	// Retrieve a random animation from the database
 	animation, err := GetRandomAnimation()
 	if err != nil {
+		// Check if the error is because no animations exist
+		if err.Error() == "no animations found" {
+			LogResponse("/feed", "No animations found in database", nil)
+			// Return an empty response with 200 status (or you could use 204 No Content)
+			response := GetAnimationResponse{
+				ID:          "",
+				Code:        "",
+				Description: "No animations available yet. Create the first animation!",
+			}
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
 		LogResponse("/feed", "Error retrieving random animation", err)
 		EncodeError(w, "Error retrieving random animation: "+err.Error(), http.StatusInternalServerError)
 		return
