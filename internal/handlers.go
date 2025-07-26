@@ -222,10 +222,19 @@ func animationHandler(w http.ResponseWriter, r *http.Request) {
 	// Sanitize the animation code by removing markdown fences
 	animation = SanitizeAnimationCode(animation)
 
-	LogResponse("/generate-animation", "Animation generated successfully", nil)
+	// Preprocess the p5.js code for better compatibility
+	processedAnimation := PreprocessP5Code(animation)
 
-	// Return the animation code
-	response := AnimationResponse{Code: animation}
+	// Analyze the code to provide metadata
+	metadata := AnalyzeP5Code(processedAnimation)
+
+	LogResponse("/generate-animation", "Animation generated and processed successfully", nil)
+
+	// Return the processed animation code with metadata
+	response := AnimationResponse{
+		Code:     processedAnimation,
+		Metadata: metadata,
+	}
 	json.NewEncoder(w).Encode(response)
 }
 

@@ -244,3 +244,134 @@ func SanitizeAnimationCode(raw string) string {
 
 	return raw
 }
+
+// PreprocessP5Code applies comprehensive preprocessing to p5.js code
+func PreprocessP5Code(code string) string {
+	lines := strings.Split(code, "\n")
+	processedLines := make([]string, 0, len(lines))
+	declaredVars := make(map[string]bool)
+
+	// First pass: collect already declared variables and function names
+	for _, line := range lines {
+		// Look for let/var/const declarations
+		letRegex := regexp.MustCompile(`(?:let|var|const)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)`)
+		if matches := letRegex.FindAllStringSubmatch(line, -1); matches != nil {
+			for _, match := range matches {
+				if len(match) > 1 {
+					declaredVars[match[1]] = true
+				}
+			}
+		}
+
+		// Look for function declarations
+		funcRegex := regexp.MustCompile(`function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)`)
+		if matches := funcRegex.FindStringSubmatch(line); len(matches) > 1 {
+			declaredVars[matches[1]] = true
+		}
+
+		// Look for array declarations like: let arrayName = [];
+		arrayRegex := regexp.MustCompile(`(?:let|var|const)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*\[`)
+		if matches := arrayRegex.FindStringSubmatch(line); len(matches) > 1 {
+			declaredVars[matches[1]] = true
+		}
+	}
+
+	// Second pass: fix undeclared variables and other issues
+	for _, line := range lines {
+		processedLine := line
+
+		// Remove canvas variable assignment, preserve original parameters
+		canvasRegex := regexp.MustCompile(`(\s*)(?:let|var|const)\s+canvas\s*=\s*createCanvas\(([^)]*)\);`)
+		if matches := canvasRegex.FindStringSubmatch(line); len(matches) > 2 {
+			processedLine = matches[1] + "createCanvas(" + matches[2] + ");"
+		}
+
+		// Remove or comment out canvas.parent() calls
+		parentRegex := regexp.MustCompile(`(\s*).*\.parent\([^)]*\);?\s*`)
+		if parentRegex.MatchString(line) {
+			processedLine = parentRegex.ReplaceAllString(line, "${1}// Canvas parent handled by instance mode\n")
+		}
+
+		// Fix missing closing brackets in array access
+		bracketRegex := regexp.MustCompile(`(\w+)\[(\w+)\.(\w+)\s*(\+|-|\*|\/|)=\s*([^;]+);`)
+		processedLine = bracketRegex.ReplaceAllString(processedLine, "$1[$2].$3 $4= $5;")
+
+		// Fix undeclared variables
+		assignmentRegex := regexp.MustCompile(`^\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*[^=]`)
+		if matches := assignmentRegex.FindStringSubmatch(line); len(matches) > 1 {
+			varName := matches[1]
+			p5Functions := map[string]bool{
+				"setup": true, "draw": true, "mousePressed": true, "mouseReleased": true,
+				"keyPressed": true, "keyReleased": true, "windowResized": true,
+			}
+
+			// Get only the code part before any comment
+			codePart := strings.Split(line, "//")[0]
+
+			if !strings.Contains(codePart, "function") &&
+				!strings.Contains(codePart, "let ") &&
+				!strings.Contains(codePart, "var ") &&
+				!strings.Contains(codePart, "const ") &&
+				!strings.Contains(codePart, "for ") && // Don't fix for loop variables
+				!strings.Contains(codePart, "if ") && // Don't fix if statement assignments
+				!declaredVars[varName] &&
+				!p5Functions[varName] {
+
+				whitespaceRegex := regexp.MustCompile(`^(\s*)([a-zA-Z_$][a-zA-Z0-9_$]*\s*=)`)
+				processedLine = whitespaceRegex.ReplaceAllString(processedLine, "${1}let $2")
+				declaredVars[varName] = true
+			}
+		}
+
+		processedLines = append(processedLines, processedLine)
+	}
+
+	return strings.Join(processedLines, "\n")
+}
+
+// AnalyzeP5Code analyzes p5.js code and returns metadata about functions found
+func AnalyzeP5Code(code string) map[string]interface{} {
+	metadata := make(map[string]interface{})
+
+	// Detect p5.js functions
+	functions := make(map[string]bool)
+	functionRegex := regexp.MustCompile(`function\s+(setup|draw|mousePressed|mouseReleased|keyPressed|keyReleased|windowResized)\s*\(`)
+
+	matches := functionRegex.FindAllStringSubmatch(code, -1)
+	for _, match := range matches {
+		if len(match) > 1 {
+			functions[match[1]] = true
+		}
+	}
+
+	metadata["functions"] = functions
+	metadata["hasSetup"] = functions["setup"]
+	metadata["hasDraw"] = functions["draw"]
+	metadata["hasInteraction"] = functions["mousePressed"] || functions["mouseReleased"] || functions["keyPressed"] || functions["keyReleased"]
+
+	// Detect canvas creation
+	canvasRegex := regexp.MustCompile(`createCanvas\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)`)
+	if matches := canvasRegex.FindStringSubmatch(code); len(matches) > 1 {
+		metadata["hasCanvas"] = true
+		metadata["canvasWidth"] = strings.TrimSpace(matches[1])
+		if len(matches) > 2 && matches[2] != "" {
+			metadata["canvasHeight"] = strings.TrimSpace(matches[2])
+		}
+	} else {
+		metadata["hasCanvas"] = false
+	}
+
+	// Basic validation
+	errors := make([]string, 0)
+	if !functions["setup"] {
+		errors = append(errors, "Missing setup() function")
+	}
+	if !functions["draw"] {
+		errors = append(errors, "Missing draw() function")
+	}
+
+	metadata["errors"] = errors
+	metadata["isValid"] = len(errors) == 0
+
+	return metadata
+}

@@ -11,8 +11,9 @@ type AnimationRequest struct {
 
 // AnimationResponse represents the response with p5.js animation
 type AnimationResponse struct {
-	Code  string `json:"code"`
-	Error string `json:"error,omitempty"`
+	Code     string                 `json:"code"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Error    string                 `json:"error,omitempty"`
 }
 
 type SaveAnimationRequest struct {
