@@ -361,6 +361,17 @@ func AnalyzeP5Code(code string) map[string]interface{} {
 		metadata["hasCanvas"] = false
 	}
 
+	// Detect shape usage
+	shapeRegex := regexp.MustCompile(`(beginShape|endShape|vertex|curve|bezier)\s*\(`)
+	metadata["usesShapes"] = shapeRegex.MatchString(code)
+
+	// Detect advanced features
+	threeDRegex := regexp.MustCompile(`(box|sphere|cylinder|rotateX|rotateY|rotateZ)\s*\(`)
+	metadata["uses3D"] = threeDRegex.MatchString(code)
+
+	imageRegex := regexp.MustCompile(`(loadImage|image|texture)\s*\(`)
+	metadata["usesImages"] = imageRegex.MatchString(code)
+
 	// Basic validation
 	errors := make([]string, 0)
 	if !functions["setup"] {
