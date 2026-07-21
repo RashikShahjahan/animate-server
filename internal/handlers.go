@@ -2,7 +2,6 @@ package internal
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
@@ -162,10 +161,9 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 // generateJWT creates a new JWT token for the given user ID
 func generateJWT(userId string) (string, error) {
-	// Get JWT secret key from environment variable
-	secretKey := GetAPIKey("JWT_SECRET_KEY")
-	if secretKey == "" {
-		return "", errors.New("JWT secret key not configured")
+	secretKey, err := JWTSecret()
+	if err != nil {
+		return "", err
 	}
 
 	// Create a new token with claims
@@ -175,7 +173,7 @@ func generateJWT(userId string) (string, error) {
 	})
 
 	// Sign the token with the secret key
-	tokenString, err := token.SignedString([]byte(secretKey))
+	tokenString, err := token.SignedString(secretKey)
 	if err != nil {
 		return "", err
 	}
@@ -313,13 +311,7 @@ func getFeedHandler(w http.ResponseWriter, r *http.Request) {
 		// Check if the error is because no animations exist
 		if err.Error() == "no animations found" {
 			LogResponse("/feed", "No animations found in database", nil)
-			// Return an empty response with 200 status (or you could use 204 No Content)
-			response := GetAnimationResponse{
-				ID:          "",
-				Code:        "",
-				Description: "No animations available yet. Create the first animation!",
-			}
-			json.NewEncoder(w).Encode(response)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 

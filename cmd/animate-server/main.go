@@ -14,6 +14,9 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: .env file not found or could not be loaded")
 	}
+	if _, err := internal.JWTSecret(); err != nil {
+		log.Fatalf("Invalid JWT_SECRET_KEY: %v", err)
+	}
 
 	// Initialize the PostgreSQL database
 	if err := internal.InitDB(); err != nil {

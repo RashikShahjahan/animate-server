@@ -1,9 +1,68 @@
 package internal
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestJWTSecretValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		secret  string
+		wantErr bool
+	}{
+		{name: "missing", secret: "", wantErr: true},
+		{name: "example placeholder", secret: jwtSecretPlaceholder, wantErr: true},
+		{name: "too short", secret: strings.Repeat("a", minJWTSecretLength-1), wantErr: true},
+		{name: "minimum length", secret: strings.Repeat("a", minJWTSecretLength)},
+		{name: "longer secret", secret: strings.Repeat("a", minJWTSecretLength+1)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET_KEY", tt.secret)
+
+			secret, err := JWTSecret()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("JWTSecret() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && string(secret) != tt.secret {
+				t.Errorf("JWTSecret() = %q, want %q", secret, tt.secret)
+			}
+		})
+	}
+}
+
+func TestEncodeError(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	recorder.Header().Set("Content-Type", "text/plain")
+
+	EncodeError(recorder, "invalid request", http.StatusBadRequest)
+
+	response := recorder.Result()
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", contentType)
+	}
+
+	var body struct {
+		Error  string `json:"error"`
+		Status int    `json:"status"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Error != "invalid request" || body.Status != http.StatusBadRequest {
+		t.Errorf("body = %+v, want error %q and status %d", body, "invalid request", http.StatusBadRequest)
+	}
+}
 
 func TestSanitizeAnimationCode(t *testing.T) {
 	tests := []struct {

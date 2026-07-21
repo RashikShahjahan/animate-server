@@ -171,6 +171,23 @@ func InitDB() error {
 		log.Printf("[DB] Warning: Failed to create animation_id index on user_moods table: %v", err)
 	}
 
+	// Keep the latest legacy mood before enforcing one mood per user and animation.
+	_, err = db.Exec(`
+		DELETE FROM user_moods AS older
+		USING user_moods AS newer
+		WHERE older.user_id = newer.user_id
+			AND older.animation_id = newer.animation_id
+			AND older.id < newer.id
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to remove duplicate user moods: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_moods_unique_user_animation ON user_moods(user_id, animation_id)`)
+	if err != nil {
+		return fmt.Errorf("failed to enforce unique user moods: %w", err)
+	}
+
 	// Add index on email for faster user lookups
 	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`)
 	if err != nil {
@@ -377,13 +394,15 @@ func GetRandomAnimation() (GetAnimationResponse, error) {
 
 // SaveMood saves a user's mood for an animation
 func SaveMood(userId string, animationId string, mood string) error {
-	// Insert the mood into the database
 	_, err := db.Exec(
-		"INSERT INTO user_moods (user_id, animation_id, mood) VALUES ($1, $2, $3)",
+		`INSERT INTO user_moods (user_id, animation_id, mood)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (user_id, animation_id)
+		 DO UPDATE SET mood = EXCLUDED.mood, created_at = CURRENT_TIMESTAMP`,
 		userId, animationId, mood,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to insert mood: %v", err)
+		return fmt.Errorf("failed to save mood: %w", err)
 	}
 
 	log.Printf("[DB] Mood saved successfully for user %s and animation %s", userId, animationId)

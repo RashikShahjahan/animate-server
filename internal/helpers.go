@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Context utilities for user authentication
@@ -21,6 +23,11 @@ type contextKey string
 // User context key
 const userIDKey contextKey = "userID"
 
+const (
+	jwtSecretPlaceholder = "your_jwt_secret_key_here"
+	minJWTSecretLength   = 32
+)
+
 // SetUserIDInContext adds a user ID to the request context
 func SetUserIDInContext(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, userIDKey, userID)
@@ -30,6 +37,29 @@ func SetUserIDInContext(ctx context.Context, userID string) context.Context {
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(userIDKey).(string)
 	return userID, ok
+}
+
+// JWTSecret returns the validated JWT signing secret from the environment.
+func JWTSecret() ([]byte, error) {
+	secret := os.Getenv("JWT_SECRET_KEY")
+	if err := validateJWTSecret(secret); err != nil {
+		return nil, err
+	}
+
+	return []byte(secret), nil
+}
+
+func validateJWTSecret(secret string) error {
+	switch {
+	case secret == "":
+		return errors.New("JWT_SECRET_KEY is required")
+	case secret == jwtSecretPlaceholder:
+		return errors.New("JWT_SECRET_KEY must not use the example placeholder")
+	case utf8.RuneCountInString(secret) < minJWTSecretLength:
+		return fmt.Errorf("JWT_SECRET_KEY must be at least %d characters", minJWTSecretLength)
+	default:
+		return nil
+	}
 }
 
 // LogRequest logs the request details
@@ -69,15 +99,7 @@ func loadEnvFile() error {
 	// Open .env file
 	envFile, err := os.Open(".env")
 	if err != nil {
-		if os.IsNotExist(err) {
-			// Try env.example instead
-			envFile, err = os.Open("env.example")
-			if err != nil {
-				return fmt.Errorf("no .env or env.example file found: %v", err)
-			}
-		} else {
-			return fmt.Errorf("failed to open .env file: %v", err)
-		}
+		return fmt.Errorf("failed to open .env file: %w", err)
 	}
 	defer envFile.Close()
 
@@ -220,6 +242,7 @@ Do not include any markdown, HTML, CSS, or explanations. Only return the JavaScr
 
 // EncodeError writes a JSON error response
 func EncodeError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	response := struct {
 		Error  string `json:"error"`

@@ -102,18 +102,23 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		// Get the Authorization header
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			EncodeError(w, "Authorization header required", http.StatusUnauthorized)
 			return
 		}
 
 		// Extract the token
 		bearerToken := strings.Split(authHeader, " ")
 		if len(bearerToken) != 2 || bearerToken[0] != "Bearer" {
-			http.Error(w, "Invalid authorization token format", http.StatusUnauthorized)
+			EncodeError(w, "Invalid authorization token format", http.StatusUnauthorized)
 			return
 		}
 
 		tokenString := bearerToken[1]
+		secretKey, err := JWTSecret()
+		if err != nil {
+			EncodeError(w, "Invalid or expired token", http.StatusUnauthorized)
+			return
+		}
 
 		// Parse and validate the token
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -122,17 +127,11 @@ func AuthMiddleware(next http.Handler) http.Handler {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
 
-			// Get JWT secret key
-			secretKey := GetAPIKey("JWT_SECRET_KEY")
-			if secretKey == "" {
-				return nil, fmt.Errorf("JWT secret key not configured")
-			}
-
-			return []byte(secretKey), nil
+			return secretKey, nil
 		})
 
 		if err != nil {
-			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+			EncodeError(w, "Invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
@@ -141,7 +140,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			// Check for userId claim
 			userId, ok := claims["userId"].(string)
 			if !ok {
-				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+				EncodeError(w, "Invalid token claims", http.StatusUnauthorized)
 				return
 			}
 
@@ -150,7 +149,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			ctx = SetUserIDInContext(ctx, userId)
 			r = r.WithContext(ctx)
 		} else {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			EncodeError(w, "Invalid token claims", http.StatusUnauthorized)
 			return
 		}
 
