@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -200,51 +199,7 @@ func InitDB() error {
 		log.Printf("[DB] Warning: Some database migrations may have failed: %v", err)
 	}
 
-	// Execute init SQL script
-	log.Println("[DB] Executing initialization SQL script...")
-	err = executeInitScript()
-	if err != nil {
-		log.Printf("[DB] Warning: Failed to execute init SQL script: %v", err)
-	} else {
-		log.Println("[DB] Init SQL script executed successfully")
-	}
-
 	log.Println("[DB] Database initialization completed successfully")
-	return nil
-}
-
-// executeInitScript reads and executes the init_db.sql script
-func executeInitScript() error {
-	// Read the SQL script file
-	sqlBytes, err := os.ReadFile("init_db.sql")
-	if err != nil {
-		if os.IsNotExist(err) {
-			log.Println("[DB] init_db.sql file not found, skipping initialization script")
-			return nil
-		}
-		return fmt.Errorf("failed to read init_db.sql: %v", err)
-	}
-
-	// Convert to string and split by semicolons to get individual statements
-	sqlScript := string(sqlBytes)
-	statements := strings.Split(sqlScript, ";")
-
-	// Execute each statement
-	for i, statement := range statements {
-		statement = strings.TrimSpace(statement)
-		if statement == "" {
-			continue
-		}
-
-		log.Printf("[DB] Executing statement %d...", i+1)
-		_, err := db.Exec(statement)
-		if err != nil {
-			log.Printf("[DB] Warning: Failed to execute statement %d: %v", i+1, err)
-			log.Printf("[DB] Statement was: %s", statement)
-			// Continue with other statements even if one fails
-		}
-	}
-
 	return nil
 }
 
